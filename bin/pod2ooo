@@ -1,0 +1,199 @@
+#!/usr/bin/perl
+use strict;
+
+# $Id: pod2ooo,v 1.2 2004/06/03 09:43:23 cbouvi Exp $
+#
+#  Copyright (C) 2004 Cédric Bouvier
+#
+#  This program is free software; you can redistribute it and/or modify it
+#  under the terms of the GNU General Public License as published by the Free
+#  Software Foundation; either version 2 of the License, or (at your option)
+#  any later version.
+#
+#  This program is distributed in the hope that it will be useful, but WITHOUT
+#  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+#  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+#  more details.
+#
+#  You should have received a copy of the GNU General Public License along with
+#  this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+#  Place, Suite 330, Boston, MA  02111-1307  USA
+
+# $Log: pod2ooo,v $
+# Revision 1.2  2004/06/03 09:43:23  cbouvi
+# Updated POD
+#
+# Revision 1.1  2004/06/02 16:09:33  cbouvi
+# Added bin/pod2ooo
+#
+
+use File::Basename qw/ dirname /;
+use Getopt::Long;
+use Pod::Usage;
+
+use Pod::OOoWriter;
+
+my %opt;
+GetOptions \%opt, qw/ template|t=s infile|i=s outfile|o=s help|h version|v /
+    or pod2usage -message => "Try $0 --help", -verbose => 0;
+
+pod2usage -verbose => 1 if $opt{help};
+
+if ( $opt{version} ) {
+    print "pod2ooo version $Pod::OOoWriter::VERSION\n";
+    exit 0;
+}
+
+$opt{template}
+    or pod2usage -message => "Please provide a template with --template option", -verbose => 0;
+
+$opt{infile}  ||= shift;
+$opt{outfile} ||= shift;
+
+if ( ! $opt{infile} || $opt{infile} eq '-' ) {
+    $opt{infile} = '-';
+    pod2usage -message => "Please provide an output filename with --outfile option", -verbose => 0;
+}
+elsif ( ! $opt{outfile} ) {
+    ($opt{outfile} = $opt{infile}) =~ s/\.pod$//i;
+    $opt{outfile} .= '.sxw';
+}
+
+my $p = new Pod::OOoWriter outputfile => $opt{outfile}, ootemplate => $opt{template};
+$p->parse_from_file($opt{infile});
+$p->flush();
+
+=head1 NAME
+
+pod2ooo - converts a .pod file to a .sxw OpenOffice.org Writer file
+
+=head1 SYNOPSIS
+
+    pod2ooo --template=template.sxw --infile=in.pod --outfile=out.sxw
+    pod2ooo -t template.sxw -i in.pod -o out.sxw
+
+Output to F<in.sxw>:
+
+    pod2ooo -t template.sxw -i in.pod
+
+=head1 DESCRIPTION
+
+This program merges the contents of a POD file into an OpenOffice.org Writer
+file, generating another OOo file.
+
+=head2 Preparing the template
+
+The template should contain markup that tells Pod::OOoWriter what formatting to
+apply when it encounters a given POD directive.
+
+The template must thus contain sample paragraphs in heading style, level 1 to
+4. These paragraphs must contain the tokens C<#head1#> to C<#head4#>
+respectively. This way, when Pod::OOoWriter encounters a C<=head2> directive,
+it will apply the same style than that of the paragraph that contained the
+token C<#head2#>.
+
+Similarly, sample paragraphs must be provided for normal text, including the
+token C<#para#>, and for verbatim text, including the token C<#verbatim#>. The
+sample normal paragraph should also contain tokens C<#bold#>, C<#italic#>,
+C<#file#> and C<#code#>, in character styles that denote, respectively, bold,
+italic, file names or paths, and code snippets or identifiers.
+
+Samples should also be provided for bulleted, unordered lists, in levels 1 to
+3, containing the tokens C<#over4#> to C<#over6#>.
+
+A basic template example is included in the source distribution.
+
+=head2 Keyword substitution
+
+Keywords surrounded by double hashes (e.g. C<##KEYWORD##>) can be included
+anywhere in the OOo template: in the text, in the page headers and footers or
+in the document's properties. This allows for defining the document's title, or
+the author, or the address of the company producing it, etc.
+
+Values for the keywords must be defined in the POD itself, in a C<=begin
+OOoWriter> section. Each paragraph with such a section will be parsed as a
+key/value pair, separated by a colon (whitespace on either side of the colon is
+allowed and optionnal).
+
+    =begin OOoWriter
+
+    TITLE : Testing Pod::OOoWriter
+
+    AUTHOR: Cédric Bouvier
+
+    =end
+
+Keywords are case-sensitive, and should match C</^\w+$/> (i.e., only letters,
+digits and underscores).
+
+=head2 The parsing
+
+Pod::OOoWriter starts by parsing the template in search for the C<#head1#>
+token. Anything before that is copied verbatim to the output. This means that
+the template can contain a front page, or a table of contents, as long as they
+appear B<before> the token C<#head1#>.
+
+Once C<#head1#> is found, the rest of the template is still parsed in search
+for the other tokens, but it is no longer copied to the output. Instead, the
+output consists of the POD document, with styles applied according to the
+tokens found in the template.
+
+Once the template has been parsed and the POD text merged within, the keyword
+substitution occurs.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-i> I<FILE>, B<--infile>=I<FILE>
+
+Specify the POD file to convert. When missing, the first argument is taken,
+i.e., these two lines are equivalent:
+
+    pod2ooo -t template.sxw -i in.pod
+    pod2ooo -t template.sxw in.pod
+
+When both the C<--infile> option and the first argument are missing, the POD is
+read from standard input.
+
+=item B<-o> I<FILE>, B<--outfile>=I<FILE>
+
+Specify the OpenOffice.org Writer file to create. When missing, the second
+argument is argument is taken, or the first one when C<--infile> is specified.
+These are equivalent:
+
+    pod2ooo -t template.sxw -o out.sxw -i in.pod
+    pod2ooo -t template.sxw -o out.sxw in.pod
+    pod2ooo -t template.sxw in.pod out.sxw
+
+When both the C<--outfile> option and the second argument are missing, the
+output file is computed from the C<--infile>, by removing the C<.pod> extension
+if any, and appending C<.sxw>. This will not work when read from standard
+input, as C<--outfile> must be a real file.
+
+=item B<-t> I<FILE>, B<--template>=I<FILE>
+
+Specify the location of the OpenOffice.org Writer template.
+
+=item B<-v>, B<--version>
+
+Prints the program's version and exits.
+
+=item B<-h>, B<--help>
+
+Prints a help message and exits.
+
+=back
+
+=head1 SEE ALSO
+
+L<perlpod>, L<Pod::OOoWriter>
+
+=head1 AUTHOR
+
+Copyright © 2004
+
+Cédric Bouvier <cbouvi@cpan.org>
+
+=cut
+
