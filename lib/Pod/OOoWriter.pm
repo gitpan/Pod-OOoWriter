@@ -1,7 +1,7 @@
 package Pod::OOoWriter;
 use strict;
 
-# $Id: OOoWriter.pm,v 1.12 2004/06/03 14:48:06 cbouvi Exp $
+# $Id: OOoWriter.pm,v 1.20 2004/06/09 14:57:48 cbouvi Exp $
 #
 #  Copyright © 2004 Cédric Bouvier
 #
@@ -20,6 +20,30 @@ use strict;
 #  Place, Suite 330, Boston, MA  02111-1307  USA
 #
 # $Log: OOoWriter.pm,v $
+# Revision 1.20  2004/06/09 14:57:48  cbouvi
+# Bugfix with nested unordered lists
+#
+# Revision 1.19  2004/06/09 13:59:05  cbouvi
+# Removes the number of a numbered item only at the beginning (was a bug)
+#
+# Revision 1.18  2004/06/09 11:40:43  cbouvi
+# Double quotes are no-longer escaped (caused problems with interior sequences)
+#
+# Revision 1.17  2004/06/09 08:36:59  cbouvi
+# Removed bullets in from POD input, so that only the next paragraph is a bullet
+#
+# Revision 1.16  2004/06/08 15:38:41  cbouvi
+# Added support for numbered list. Code cleanup
+#
+# Revision 1.15  2004/06/08 14:04:23  cbouvi
+# More generic generation of XML tags (less hard-coded)
+#
+# Revision 1.14  2004/06/04 15:11:12  cbouvi
+# Paragraphs after =item now get the list style, instead of default para
+#
+# Revision 1.13  2004/06/04 14:34:59  cbouvi
+# Better handling of lists. Applies the style at list level as well as item level
+#
 # Revision 1.12  2004/06/03 14:48:06  cbouvi
 # Two typos
 #
@@ -50,10 +74,23 @@ use vars qw/ @ISA $VERSION /;
 use Archive::Zip qw/ :ERROR_CODES /;
 use Unicode::String qw/ latin1 utf8 /;
 
-$VERSION = 0.1;
+$VERSION = 0.2;
 @ISA = qw/ Pod::Parser /;
 
 use Pod::OOoWriter::XMLParser;
+
+#
+# xml_escape
+# Substitutes & < and > with their entities
+#
+sub xml_escape {
+
+    local $_ = $_[0];
+    s/&/&amp;/g;
+    s/</&lt;/g;
+    s/>/&gt;/g;
+    return $_;
+}
 
 #
 # escape
@@ -67,9 +104,7 @@ sub escape {
     s/\s+$//;
 
     # Substitute XML entities
-    s/&/&amp;/g;
-    s/</&lt;/g;
-    s/>/&gt;/g;
+    $_ = xml_escape $_;
 
     # Replace special {tag:s with real (XML) ones
     s/\{tag:/</g;
@@ -173,6 +208,21 @@ sub interpolate {
     return $_;
 }
 
+# rebuild an opening tag, from its name and a hashref of attributes
+sub opening_tag {
+
+    my ($tag, $attr) = @{$_[0]};
+    my @attr = map qq|$_="| . xml_escape($attr->{$_}) . '"', keys %$attr;
+
+    return '<' . join(' ', grep $_, $tag, @attr) . '>';
+}
+
+sub closing_tag {
+
+    my $tag = $_[0][0];
+    return "</$tag>";
+}
+
 #
 # command
 #
@@ -189,49 +239,78 @@ sub command {
     $expansion = escape $expansion;
 
     for ( $command ) {
-        /head([1234])/ and do {
-            # Heading: surround the paragraph with a <text:h> tag, with the
-            # style associated with the corresponding token.
-            $expansion = qq|<text:h text:style-name="@{[$self->{tokens}{"head$1"}]}" text:level="$1">$expansion</text:h>|;
-            last;
-        };
-        $_ eq 'over' and do {
-            # Start a unordered list. The closing tag will be done when the
-            # =back command is seen.
-            $paragraph =~ s/^\s+|\s+$//g;
-            $expansion = qq|<text:unordered-list>|;
-
-            # Use the numerical argument to =over to memorize the style
-            # associated with the corresponding token. Use a stack of styles in
-            # case of nested bullet-lists
-            push @{$self->{current_style}}, $self->{tokens}{"over$paragraph"};
-            last;
-        };
-        $_ eq 'back' and do {
-            # Close the last item and the unordered list
-            $expansion = qq|</text:list-item>\n</text:unordered-list>|;
-            $self->{ooo_in_item} = 0;
-            pop @{$self->{current_style}};
-            last;
-        };
-        $_ eq 'item' and do {
-            # Create a new item, with the text in a paragraph with the
-            # appropriate style. Do not close the item yet, since it may
-            # contain the subsequent paragraphs.
-            $expansion = qq|<text:list-item><text:p text:style-name="@{[$self->{current_style}[-1]]}">$expansion</text:p>|;
-
-            # Close the previous item if there was one.
-            $expansion = qq|</text:list-item>$expansion| if $self->{ooo_in_item};
-            $self->{ooo_in_item} = 1;
-            last;
-        };
         $_ eq 'begin' and do {
             $paragraph =~ s/^\s+|\s+$//g;
-            $self->{in_keyword_section} = 1 if $paragraph eq 'OOoWriter';
-            last;
+            if ( $paragraph eq 'OOoWriter' ) {
+                $self->{in_keyword_section} = 1 if $paragraph eq 'OOoWriter';
+            }
+            else {
+                $self->{ignore_section} = 1;
+            }
+            return;
         };
         $_ eq 'end' and do {
             $self->{in_keyword_section} = 0 if $self->{in_keyword_section};
+            $self->{ignore_section} = 0;
+            return;
+        };
+
+        return if $self->{ignore_section};
+
+        /head\d/ and do {
+            # Heading: surround the heading with the appropriate tags.
+            my $elem = $self->{tokens}{$_};
+            $expansion = opening_tag($elem->[0]) . $expansion . closing_tag($elem->[0]);
+            last;
+        };
+        $_ eq 'over' and do {
+            # Push undef onto the style stacks. The real style will only be
+            # known when encountering the first item (bullet/numbered/...)
+            push @{$self->{current_style}}, undef;
+            return;
+        };
+        $_ eq 'back' and do {
+            # Close the last item and the (un)ordered list
+            my $elem = pop @{$self->{current_style}};
+            $expansion = join '', map closing_tag($_), @$elem[1, 2];
+            $self->{ooo_in_item}--;
+            last;
+        };
+        $_ eq 'item' and do {
+            # Retrieve the style for the current list
+            my $elem = $self->{current_style}[-1];
+            if ( !$elem ) {
+                # Style still unset: this is the first item. Take a look at it
+                # and decide about what kind of list (ordered or unordered).
+                my $depth = @{$self->{current_style}};
+                $elem = $self->{current_style}[-1] = $expansion =~ /^\d+\.?\s*/
+                    ? $self->{tokens}{"ol$depth"}
+                    : $self->{tokens}{"ul$depth"};
+            }
+            
+            # Remove bullets or leading numbers.
+            $expansion =~ s/^[*o-]+\s*//;
+            $expansion =~ s/^\d+\.?\s*//;
+
+            # Create a new item, with the text in a paragraph with the
+            # appropriate style. Do not close the item yet, since it may
+            # contain the subsequent paragraphs.
+            if ( $expansion ) {
+                $expansion = opening_tag($elem->[1]) . opening_tag($elem->[0]) . $expansion . closing_tag($elem->[0]);
+            }
+            else {
+                $expansion = opening_tag($elem->[1]);
+            }
+
+            # Close the previous item if there was one, otherwise, start the list.
+            if ( $self->{ooo_in_item} == @{$self->{current_style}} ) {
+                $expansion = closing_tag($elem->[1]) . $expansion;
+            }
+            else {
+                $expansion = opening_tag($elem->[2]) . $expansion;
+            }
+
+            $self->{ooo_in_item} = @{$self->{current_style}};
             last;
         };
     }
@@ -247,6 +326,8 @@ sub verbatim {
 
     my ($self, $paragraph, $line_num) = @_;
 
+    return if $self->{ignore_section};
+
     my $expansion = escape $paragraph;
     for ( $expansion ) {
         s/^\s+// or last;
@@ -256,7 +337,8 @@ sub verbatim {
         s,\r?\n,<text:line-break/>,g; # XMLize line-breaks
     }
 
-    $expansion = qq|<text:p text:style-name="@{[$self->{tokens}{verbatim}]}">$expansion</text:p>\n|;
+    my $elem = $self->{tokens}{verbatim}[0];
+    $expansion = opening_tag($elem) . $expansion . closing_tag($elem);
 
     $self->{contents} .= $expansion;
 }
@@ -270,6 +352,8 @@ sub verbatim {
 sub textblock {
 
     my ($self, $paragraph, $line_num) = @_;
+    return if $self->{ignore_section};
+
     my $expansion = $self->interpolate($paragraph, $line_num);
     $expansion = escape $expansion;
 
@@ -279,7 +363,12 @@ sub textblock {
         $self->{keywords}{$keyword} = $value;
     }
     else {
-        $expansion = qq|<text:p text:style-name="@{[$self->{tokens}{para}]}">$expansion</text:p>\n|;
+        # Paragraphs within lists take a different style
+        my $elem = $self->{ooo_in_item}
+        ? $self->{current_style}[-1]
+        : $self->{tokens}{para};
+
+        $expansion = opening_tag($elem->[0]) . $expansion . closing_tag($elem->[0]);
         $self->{contents} .= $expansion;
     }
 }
@@ -299,8 +388,13 @@ sub interior_sequence {
 
     for ( $seq_command ) {
         /^[BCFI]$/ and do {
-            my $style = $self->{tokens}{$seq_command};
-            return qq|\{tag:text:span text:style-name="$style"tag:\}$seq_argument\{tag:/text:spantag:\}|;
+            my $elem = $self->{tokens}{$seq_command}[0];
+            my $open = opening_tag($elem);
+            my $close = closing_tag($elem);
+            for ( $open, $close ) {
+                $_ = "\{tag:" . substr($_, 1, -1) . "tag:\}";
+            }
+            return $open . $seq_argument . $close;
         };
     }
 }
@@ -371,9 +465,14 @@ C<#file#> and C<#code#>, in character styles that denote, respectively, bold,
 italic, file names or paths, and code snippets or identifiers.
 
 Samples should also be provided for bulleted, unordered lists, in levels 1 to
-3, containing the tokens C<#over4#> to C<#over6#>.
+3, containing the tokens C<#over4#> to C<#over6#>. 4 is the default indentation
+level for the C<=over> directive, hence the seemingly weird choice of tokens.
+Alternatively, C<#ul1#> to C<#ul3> can be used instead.
 
-A basic template example is included in the source distribution.
+For numbered lists, use tokens C<#ol1#> to C<#ol2#>.
+
+A basic template example is included in directory F<eg/> of the source
+distribution.
 
 =head2 Keyword substitution
 
@@ -413,25 +512,18 @@ tokens found in the template.
 Once the template has been parsed and the POD text merged within, the keyword
 substitution occurs.
 
-=head1 LIMITATIONS
+=head1 BUGS AND LIMITATIONS
 
-Who said bugs? All right...
+The numbered list support is still somewhat buggy. For instance, a numbered
+list nested within another would not start with 1, but with the number that
+follows the latest item in its parent list, e.g.:
 
-=over 4
-
-=item *
-
-C<#head[1234]#> tokens must be located in heading paragraphs, not in a regular
-paragraph style vaguely resembling that of a heading. The OpenOffice.org tag is
-C<< <text:h> >> for headings, whereas it is C<< <text:p> >> for regular
-paragraphs. Pod::OOoWriter assumes the headings to be headings.
-
-=item *
-
-There is no support for numbered lists nor dictionary lists (yet). Only
-unordered lists are implemented.
-
-=item *
+    1.
+    2.
+        3.
+        4.
+    3.
+    4.
 
 Probably many, many more, and then some.
 

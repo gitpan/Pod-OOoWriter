@@ -1,0 +1,187 @@
+=begin OOoWriter
+
+SUBJECT: Pod::OOoWriter
+
+TITLE: Sample POD file
+
+=end
+
+=head1 Heading 1, Pod::OOoWriter
+
+This file is a sample POD for testing the C<Pod::OOoWriter> module.
+
+=head2 Heading 2, Interior Sequences
+
+=head3 Heading 3, Simple syntax
+
+These words should appear in B<bold>, in I<italic> or whatever styles have been
+selected to render these emphases.
+
+This should use the typographical convention for F<files>, and this for C<code>.
+
+=head3 Heading 3, More complex
+
+B<< Bold >>, I<< italic >>, etc.
+
+=head2 Heading 2, Verbatim
+
+    This is a verbatim paragraph.
+    It really should be printed "as is".
+
+=head2 Heading 2, Lists
+
+=head3 Heading 3, Unordered, dictionary-like
+
+=over 4
+
+=item B<Item 1>
+
+Description of 1
+
+=item B<Item 2>
+
+Description of 2
+
+=over 5
+
+=item B<Item 2.1>
+
+Description of 2.1
+
+=item B<Item 2.2>
+
+Description of 2.2
+
+=over 6
+
+=item B<Item 2.2.1>
+
+Description of 2.2.1
+
+=item B<Item 2.2.2>
+
+Description of 2.2.2
+
+=item B<Item 2.2.3>
+
+Description of 2.2.3
+
+=back
+
+=item B<Item 2.3>
+
+Description of 2.3
+
+=back
+
+=item B<Item 3>
+
+Description of 3
+
+=back
+
+=head3 Heading 3, Unordered, with bullets
+
+=over 4
+
+=item *
+
+Item 1
+
+=over 5
+
+=item -
+
+Item 1.1
+
+=item -
+
+Item 1.2
+
+=over 6
+
+=item o
+
+Item 1.2.1
+
+=item o
+
+Item 1.2.2
+
+=back
+
+=item -
+
+Item 1.3
+
+=back
+
+=item *
+
+Item 2
+
+=item *
+
+Item 3
+
+=back
+
+=head3 Heading 3, Ordered
+
+=over 4
+
+=item 1.
+
+Item 1
+
+=over 5
+
+=item 1.
+
+Item 1
+
+=over 6
+
+=item 1.
+
+Item 1
+
+=item 1.
+
+Item 2
+
+=item 1.
+
+Item 3
+
+=back
+
+=item 1.
+
+Item 2
+
+=item 1.
+
+Item 3
+
+=back
+
+=item 1.
+
+Item 2
+
+=item 1.
+
+Item 3
+
+=back
+
+=head4 Heading 4, for the kick of it
+
+=head1 Thank you
+
+For using C<Pod::OOoWriter>.
+
+Cédric Bouvier <cbouvi@cpan.org> (testing Latin1 characters, and angle braces)
+
+=cut
